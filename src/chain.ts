@@ -25,7 +25,9 @@ export function createPassChain(
   function getCachedPipeline(
     device: GPUDevice,
     format: GPUTextureFormat,
-    instance: FilterInstance
+    instance: FilterInstance,
+    width: number,
+    height: number
   ): CachedPipeline {
     const cacheKey = instance.filter.id;
     const cached = pipelineCache.get(cacheKey);
@@ -49,6 +51,15 @@ export function createPassChain(
       );
       return buffer;
     });
+
+    if (instance.filter.needsResolution) {
+      const buffer = device.createBuffer({
+        size: 8,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(buffer, 0, new Float32Array([width, height]));
+      uniformBuffers.push(buffer);
+    }
 
     const entry: CachedPipeline = { renderPipeline, uniformBuffers };
     pipelineCache.set(cacheKey, entry);
@@ -114,7 +125,7 @@ export function createPassChain(
 
     for (let i = 0; i < filterInstances.length; i++) {
       const instance = filterInstances[i];
-      const cached = getCachedPipeline(device, format, instance);
+      const cached = getCachedPipeline(device, format, instance, width, height);
       const outputTexture = ppTextures[i % 2];
 
       const bindGroupEntries: GPUBindGroupEntry[] = [
