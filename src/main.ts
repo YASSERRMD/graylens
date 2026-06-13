@@ -99,7 +99,7 @@ async function main() {
   function render() {
     if (!currentTexture) return;
 
-    const bindGroupEntries = [
+    const bindGroupEntries: GPUBindGroupEntry[] = [
       { binding: 0, resource: renderPipeline.sampler },
       { binding: 1, resource: currentTexture.createView() },
     ];

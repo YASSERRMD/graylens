@@ -28,7 +28,7 @@ export function createRenderPipelineFromFilter(
     },
   ];
 
-  filter.uniformParams.forEach((param, index) => {
+  filter.uniformParams.forEach((_param, index) => {
     bindGroupLayoutEntries.push({
       binding: 2 + index,
       visibility: GPUShaderStage.FRAGMENT,
