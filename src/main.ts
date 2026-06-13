@@ -3,6 +3,7 @@ import { loadImage } from "./image";
 import { setupCanvas } from "./canvas";
 import { createRenderPipeline, type ShaderType } from "./render";
 import { createIntensityUniform, updateIntensity } from "./intensity";
+import { canvasToPng, downloadBlob } from "./export";
 
 const app = document.getElementById("app");
 
@@ -43,6 +44,11 @@ async function main() {
   intensitySlider.step = "0.01";
   intensitySlider.value = "1";
   app.appendChild(intensitySlider);
+
+  const downloadButton = document.createElement("button");
+  downloadButton.textContent = "Download PNG";
+  downloadButton.disabled = true;
+  app.appendChild(downloadButton);
 
   let currentShaderType: ShaderType = "passthrough";
   let currentTexture: GPUTexture | null = null;
@@ -131,7 +137,15 @@ async function main() {
       [imageBitmap.width, imageBitmap.height]
     );
 
+    downloadButton.disabled = false;
     render();
+  });
+
+  downloadButton.addEventListener("click", () => {
+    const blob = canvasToPng(canvas);
+    if (blob) {
+      downloadBlob(blob, "graylens-export.png");
+    }
   });
 }
 
