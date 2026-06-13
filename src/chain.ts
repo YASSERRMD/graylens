@@ -97,7 +97,6 @@ export function createPassChain(
   ): void {
     if (filterInstances.length === 0) {
       const commandEncoder = device.createCommandEncoder();
-      const canvasTextureView = canvasContext.getCurrentTexture().createView();
       commandEncoder.copyTextureToTexture(
         { texture: sourceTexture },
         { texture: canvasContext.getCurrentTexture() },
