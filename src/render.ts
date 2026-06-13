@@ -1,4 +1,5 @@
 import passthroughShader from "./shaders/passthrough.wgsl?raw";
+import grayscaleShader from "./shaders/grayscale.wgsl?raw";
 
 export interface RenderPipeline {
   pipeline: GPURenderPipeline;
@@ -6,12 +7,17 @@ export interface RenderPipeline {
   bindGroupLayout: GPUBindGroupLayout;
 }
 
+export type ShaderType = "passthrough" | "grayscale";
+
 export function createRenderPipeline(
   device: GPUDevice,
-  format: GPUTextureFormat
+  format: GPUTextureFormat,
+  shaderType: ShaderType = "passthrough"
 ): RenderPipeline {
+  const shaderCode = shaderType === "grayscale" ? grayscaleShader : passthroughShader;
+
   const shaderModule = device.createShaderModule({
-    code: passthroughShader,
+    code: shaderCode,
   });
 
   const bindGroupLayout = device.createBindGroupLayout({
