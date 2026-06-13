@@ -1,5 +1,6 @@
 import type { Filter } from "./types";
 import { grayscaleFilter } from "./grayscale";
+import { grayscaleComputeFilter } from "./grayscale-compute";
 import { invertFilter } from "./invert";
 import { sepiaFilter } from "./sepia";
 import { thresholdFilter } from "./threshold";
@@ -22,6 +23,7 @@ export function getAllFilters(): Filter[] {
 }
 
 registerFilter(grayscaleFilter);
+registerFilter(grayscaleComputeFilter);
 registerFilter(invertFilter);
 registerFilter(sepiaFilter);
 registerFilter(thresholdFilter);
