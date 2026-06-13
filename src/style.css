@@ -115,3 +115,92 @@ input[type="file"] {
   text-align: center;
   color: #856404;
 }
+
+.pipeline-panel {
+  margin-top: 20px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 15px;
+}
+
+.pipeline-header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.pipeline-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.pipeline-header select {
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.pipeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pipeline-empty {
+  color: #999;
+  text-align: center;
+  padding: 20px;
+}
+
+.pipeline-entry {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 10px;
+  background-color: #fafafa;
+}
+
+.pipeline-entry-name {
+  font-weight: 600;
+  margin-right: 10px;
+}
+
+.pipeline-entry-controls {
+  display: flex;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.pipeline-entry-controls button {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.pipeline-entry-uniforms {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.uniform-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.uniform-control label {
+  min-width: 80px;
+  font-size: 13px;
+}
+
+.uniform-control input[type="range"] {
+  flex: 1;
+}
+
+.uniform-control span {
+  min-width: 40px;
+  font-size: 13px;
+  text-align: right;
+}

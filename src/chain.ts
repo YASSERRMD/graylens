@@ -59,7 +59,7 @@ export function createPassChain(
             visibility: GPUShaderStage.COMPUTE,
             storageTexture: { access: "write-only", format },
           },
-          ...instance.filter.uniformParams.map((param, index) => ({
+          ...instance.filter.uniformParams.map((_param, index) => ({
             binding: 2 + index,
             visibility: GPUShaderStage.COMPUTE,
             buffer: { type: "uniform" as const },

@@ -3,8 +3,15 @@ import { loadImage } from "./image";
 import { setupCanvas } from "./canvas";
 import { createPassChain, type PassChain } from "./chain";
 import { canvasToPng, downloadBlob } from "./export";
-import { getFilter } from "./filters/registry";
+import { getFilter, getAllFilters } from "./filters/registry";
 import { createFilterInstance, type FilterInstance } from "./filters/types";
+import {
+  createPipelineState,
+  addFilter,
+  removeFilter,
+  moveFilter,
+  type PipelineState,
+} from "./pipeline";
 import { createWebcamSource, type WebcamSource } from "./webcam";
 import "./style.css";
 
@@ -82,30 +89,47 @@ async function main() {
   controlBar.className = "control-bar";
   app.appendChild(controlBar);
 
-  const toggleButton = document.createElement("button");
-  toggleButton.textContent = "Toggle Grayscale";
-  controlBar.appendChild(toggleButton);
-
-  const intensitySlider = document.createElement("input");
-  intensitySlider.type = "range";
-  intensitySlider.min = "0";
-  intensitySlider.max = "1";
-  intensitySlider.step = "0.01";
-  intensitySlider.value = "1";
-  controlBar.appendChild(intensitySlider);
-
   const downloadButton = document.createElement("button");
   downloadButton.textContent = "Download PNG";
   downloadButton.disabled = true;
   controlBar.appendChild(downloadButton);
+
+  const pipelinePanel = document.createElement("div");
+  pipelinePanel.className = "pipeline-panel";
+  app.appendChild(pipelinePanel);
+
+  const pipelineHeader = document.createElement("div");
+  pipelineHeader.className = "pipeline-header";
+  pipelinePanel.appendChild(pipelineHeader);
+
+  const pipelineTitle = document.createElement("h3");
+  pipelineTitle.textContent = "Filter Pipeline";
+  pipelineHeader.appendChild(pipelineTitle);
+
+  const addFilterSelect = document.createElement("select");
+  const allFilters = getAllFilters();
+  for (const filter of allFilters) {
+    const option = document.createElement("option");
+    option.value = filter.id;
+    option.textContent = filter.displayName;
+    addFilterSelect.appendChild(option);
+  }
+  pipelineHeader.appendChild(addFilterSelect);
+
+  const addFilterButton = document.createElement("button");
+  addFilterButton.textContent = "Add";
+  pipelineHeader.appendChild(addFilterButton);
+
+  const pipelineList = document.createElement("div");
+  pipelineList.className = "pipeline-list";
+  pipelinePanel.appendChild(pipelineList);
 
   const statusMessage = document.createElement("div");
   statusMessage.className = "status-message";
   statusMessage.style.display = "none";
   app.appendChild(statusMessage);
 
-  const grayscaleFilter = getFilter("grayscale")!;
-  let activeFilterInstance: FilterInstance | null = null;
+  const pipelineState = createPipelineState();
   let currentTexture: GPUTexture | null = null;
   let passChain: PassChain | null = null;
   let webcam: WebcamSource | null = null;
@@ -185,12 +209,109 @@ async function main() {
     if (passChain) {
       passChain.destroy();
     }
+    passChain = createPassChain(pipelineState.instances);
+  }
 
-    if (activeFilterInstance) {
-      passChain = createPassChain([activeFilterInstance]);
-    } else {
-      passChain = createPassChain([]);
+  function renderPipelineList() {
+    pipelineList.innerHTML = "";
+
+    if (pipelineState.instances.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "pipeline-empty";
+      empty.textContent = "No filters in pipeline. Add a filter above.";
+      pipelineList.appendChild(empty);
+      return;
     }
+
+    pipelineState.instances.forEach((instance, index) => {
+      const entry = document.createElement("div");
+      entry.className = "pipeline-entry";
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "pipeline-entry-name";
+      nameSpan.textContent = instance.filter.displayName;
+      entry.appendChild(nameSpan);
+
+      const controls = document.createElement("div");
+      controls.className = "pipeline-entry-controls";
+
+      const upButton = document.createElement("button");
+      upButton.textContent = "Up";
+      upButton.disabled = index === 0;
+      upButton.addEventListener("click", () => {
+        moveFilter(pipelineState, index, index - 1);
+        renderPipelineList();
+        updateChain();
+        render();
+      });
+      controls.appendChild(upButton);
+
+      const downButton = document.createElement("button");
+      downButton.textContent = "Down";
+      downButton.disabled = index === pipelineState.instances.length - 1;
+      downButton.addEventListener("click", () => {
+        moveFilter(pipelineState, index, index + 1);
+        renderPipelineList();
+        updateChain();
+        render();
+      });
+      controls.appendChild(downButton);
+
+      const removeButton = document.createElement("button");
+      removeButton.textContent = "Remove";
+      removeButton.addEventListener("click", () => {
+        removeFilter(pipelineState, index);
+        renderPipelineList();
+        updateChain();
+        render();
+      });
+      controls.appendChild(removeButton);
+
+      entry.appendChild(controls);
+
+      if (instance.filter.uniformParams.length > 0) {
+        const uniforms = document.createElement("div");
+        uniforms.className = "pipeline-entry-uniforms";
+
+        for (const param of instance.filter.uniformParams) {
+          const uniformControl = document.createElement("div");
+          uniformControl.className = "uniform-control";
+
+          const label = document.createElement("label");
+          label.textContent = param.name;
+          uniformControl.appendChild(label);
+
+          const slider = document.createElement("input");
+          slider.type = "range";
+          slider.min = String(param.min);
+          slider.max = String(param.max);
+          slider.step = "0.01";
+          slider.value = String(instance.uniformValues[param.name]);
+          slider.addEventListener("input", (event) => {
+            const value = parseFloat(
+              (event.target as HTMLInputElement).value
+            );
+            instance.uniformValues[param.name] = value;
+            updateChain();
+            render();
+          });
+          uniformControl.appendChild(slider);
+
+          const valueSpan = document.createElement("span");
+          valueSpan.textContent = instance.uniformValues[param.name].toFixed(2);
+          slider.addEventListener("input", () => {
+            valueSpan.textContent = slider.value;
+          });
+          uniformControl.appendChild(valueSpan);
+
+          uniforms.appendChild(uniformControl);
+        }
+
+        entry.appendChild(uniforms);
+      }
+
+      pipelineList.appendChild(entry);
+    });
   }
 
   function showStatus(message: string): void {
@@ -217,7 +338,7 @@ async function main() {
       downloadButton.disabled = true;
       hideStatus();
       startWebcamLoop();
-    } catch (error) {
+    } catch {
       showStatus("Failed to access webcam. Please grant permission.");
       webcam = null;
     }
@@ -248,22 +369,12 @@ async function main() {
     switchToWebcam();
   });
 
-  toggleButton.addEventListener("click", () => {
-    if (activeFilterInstance) {
-      activeFilterInstance = null;
-    } else {
-      activeFilterInstance = createFilterInstance(grayscaleFilter, {
-        amount: parseFloat(intensitySlider.value),
-      });
-    }
-    updateChain();
-    render();
-  });
-
-  intensitySlider.addEventListener("input", (event) => {
-    const amount = parseFloat((event.target as HTMLInputElement).value);
-    if (activeFilterInstance && activeFilterInstance.filter.id === "grayscale") {
-      activeFilterInstance.uniformValues.amount = amount;
+  addFilterButton.addEventListener("click", () => {
+    const filterId = addFilterSelect.value;
+    const filter = getFilter(filterId);
+    if (filter) {
+      addFilter(pipelineState, createFilterInstance(filter));
+      renderPipelineList();
       updateChain();
       render();
     }
@@ -282,6 +393,7 @@ async function main() {
     }
   });
 
+  renderPipelineList();
   updateChain();
 }
 
