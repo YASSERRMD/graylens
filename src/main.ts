@@ -4,6 +4,7 @@ import { setupCanvas } from "./canvas";
 import { createRenderPipeline, type ShaderType } from "./render";
 import { createIntensityUniform, updateIntensity } from "./intensity";
 import { canvasToPng, downloadBlob } from "./export";
+import "./style.css";
 
 const app = document.getElementById("app");
 
@@ -20,11 +21,8 @@ async function main() {
   const { device } = gpuContext;
 
   const dropZone = document.createElement("div");
+  dropZone.className = "drop-zone";
   dropZone.textContent = "Drop an image here or click to select";
-  dropZone.style.border = "2px dashed #ccc";
-  dropZone.style.padding = "20px";
-  dropZone.style.textAlign = "center";
-  dropZone.style.cursor = "pointer";
   app.appendChild(dropZone);
 
   const fileInput = document.createElement("input");
@@ -39,16 +37,16 @@ async function main() {
 
   dropZone.addEventListener("dragover", (event) => {
     event.preventDefault();
-    dropZone.style.borderColor = "#999";
+    dropZone.classList.add("drag-over");
   });
 
   dropZone.addEventListener("dragleave", () => {
-    dropZone.style.borderColor = "#ccc";
+    dropZone.classList.remove("drag-over");
   });
 
   dropZone.addEventListener("drop", async (event) => {
     event.preventDefault();
-    dropZone.style.borderColor = "#ccc";
+    dropZone.classList.remove("drag-over");
 
     const file = event.dataTransfer?.files[0];
     if (!file) return;
@@ -66,9 +64,7 @@ async function main() {
   app.appendChild(canvas);
 
   const controlBar = document.createElement("div");
-  controlBar.style.display = "flex";
-  controlBar.style.gap = "10px";
-  controlBar.style.marginTop = "10px";
+  controlBar.className = "control-bar";
   app.appendChild(controlBar);
 
   const toggleButton = document.createElement("button");
