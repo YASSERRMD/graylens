@@ -1,5 +1,9 @@
 import type { Filter } from "./types";
 import { grayscaleFilter } from "./grayscale";
+import { invertFilter } from "./invert";
+import { sepiaFilter } from "./sepia";
+import { thresholdFilter } from "./threshold";
+import { brightnessContrastFilter } from "./brightness-contrast";
 
 const filtersById = new Map<string, Filter>();
 
@@ -16,3 +20,7 @@ export function getAllFilters(): Filter[] {
 }
 
 registerFilter(grayscaleFilter);
+registerFilter(invertFilter);
+registerFilter(sepiaFilter);
+registerFilter(thresholdFilter);
+registerFilter(brightnessContrastFilter);
