@@ -11,10 +11,19 @@ export interface PassChain {
   destroy: () => void;
 }
 
-interface CachedPipeline {
+interface CachedRenderPipeline {
+  kind: "fragment";
   renderPipeline: RenderPipeline;
   uniformBuffers: GPUBuffer[];
 }
+
+interface CachedComputePipeline {
+  kind: "compute";
+  computePipeline: GPUComputePipeline;
+  uniformBuffers: GPUBuffer[];
+}
+
+type CachedPipeline = CachedRenderPipeline | CachedComputePipeline;
 
 export function createPassChain(
   filterInstances: FilterInstance[]
@@ -32,6 +41,63 @@ export function createPassChain(
     const cacheKey = instance.filter.id;
     const cached = pipelineCache.get(cacheKey);
     if (cached) return cached;
+
+    if (instance.filter.kind === "compute") {
+      const shaderModule = device.createShaderModule({
+        code: instance.filter.wgslSource,
+      });
+
+      const bindGroupLayout = device.createBindGroupLayout({
+        entries: [
+          {
+            binding: 0,
+            visibility: GPUShaderStage.COMPUTE,
+            texture: { sampleType: "float" },
+          },
+          {
+            binding: 1,
+            visibility: GPUShaderStage.COMPUTE,
+            storageTexture: { access: "write-only", format },
+          },
+          ...instance.filter.uniformParams.map((param, index) => ({
+            binding: 2 + index,
+            visibility: GPUShaderStage.COMPUTE,
+            buffer: { type: "uniform" as const },
+          })),
+        ],
+      });
+
+      const computePipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout({
+          bindGroupLayouts: [bindGroupLayout],
+        }),
+        compute: {
+          module: shaderModule,
+          entryPoint: "main",
+        },
+      });
+
+      const uniformBuffers = instance.filter.uniformParams.map((param) => {
+        const buffer = device.createBuffer({
+          size: 4,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+        device.queue.writeBuffer(
+          buffer,
+          0,
+          new Float32Array([instance.uniformValues[param.name]])
+        );
+        return buffer;
+      });
+
+      const entry: CachedComputePipeline = {
+        kind: "compute",
+        computePipeline,
+        uniformBuffers,
+      };
+      pipelineCache.set(cacheKey, entry);
+      return entry;
+    }
 
     const renderPipeline = createRenderPipelineFromFilter(
       device,
@@ -61,7 +127,11 @@ export function createPassChain(
       uniformBuffers.push(buffer);
     }
 
-    const entry: CachedPipeline = { renderPipeline, uniformBuffers };
+    const entry: CachedRenderPipeline = {
+      kind: "fragment",
+      renderPipeline,
+      uniformBuffers,
+    };
     pipelineCache.set(cacheKey, entry);
     return entry;
   }
@@ -79,7 +149,8 @@ export function createPassChain(
       usage:
         GPUTextureUsage.TEXTURE_BINDING |
         GPUTextureUsage.COPY_DST |
-        GPUTextureUsage.RENDER_ATTACHMENT,
+        GPUTextureUsage.RENDER_ATTACHMENT |
+        GPUTextureUsage.STORAGE_BINDING,
     });
     const textureB = device.createTexture({
       size: [width, height],
@@ -87,7 +158,8 @@ export function createPassChain(
       usage:
         GPUTextureUsage.TEXTURE_BINDING |
         GPUTextureUsage.COPY_DST |
-        GPUTextureUsage.RENDER_ATTACHMENT,
+        GPUTextureUsage.RENDER_ATTACHMENT |
+        GPUTextureUsage.STORAGE_BINDING,
     });
     pingPongTextures = [textureA, textureB];
     return pingPongTextures;
@@ -128,39 +200,69 @@ export function createPassChain(
       const cached = getCachedPipeline(device, format, instance, width, height);
       const outputTexture = ppTextures[i % 2];
 
-      const bindGroupEntries: GPUBindGroupEntry[] = [
-        { binding: 0, resource: cached.renderPipeline.sampler },
-        { binding: 1, resource: inputTexture.createView() },
-      ];
-
-      cached.uniformBuffers.forEach((buffer, index) => {
-        bindGroupEntries.push({
-          binding: 2 + index,
-          resource: { buffer },
-        } as GPUBindGroupEntry);
-      });
-
-      const bindGroup = device.createBindGroup({
-        layout: cached.renderPipeline.bindGroupLayout,
-        entries: bindGroupEntries,
-      });
-
       const commandEncoder = device.createCommandEncoder();
-      const renderPass = commandEncoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: outputTexture.createView(),
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-            loadOp: "clear",
-            storeOp: "store",
-          },
-        ],
-      });
 
-      renderPass.setPipeline(cached.renderPipeline.pipeline);
-      renderPass.setBindGroup(0, bindGroup);
-      renderPass.draw(3);
-      renderPass.end();
+      if (cached.kind === "compute") {
+        const bindGroupLayout = cached.computePipeline.getBindGroupLayout(0);
+        const bindGroupEntries: GPUBindGroupEntry[] = [
+          { binding: 0, resource: inputTexture.createView() },
+          { binding: 1, resource: outputTexture.createView() },
+        ];
+
+        cached.uniformBuffers.forEach((buffer, index) => {
+          bindGroupEntries.push({
+            binding: 2 + index,
+            resource: { buffer },
+          } as GPUBindGroupEntry);
+        });
+
+        const bindGroup = device.createBindGroup({
+          layout: bindGroupLayout,
+          entries: bindGroupEntries,
+        });
+
+        const computePass = commandEncoder.beginComputePass();
+        computePass.setPipeline(cached.computePipeline);
+        computePass.setBindGroup(0, bindGroup);
+        computePass.dispatchWorkgroups(
+          Math.ceil(width / 8),
+          Math.ceil(height / 8)
+        );
+        computePass.end();
+      } else {
+        const bindGroupEntries: GPUBindGroupEntry[] = [
+          { binding: 0, resource: cached.renderPipeline.sampler },
+          { binding: 1, resource: inputTexture.createView() },
+        ];
+
+        cached.uniformBuffers.forEach((buffer, index) => {
+          bindGroupEntries.push({
+            binding: 2 + index,
+            resource: { buffer },
+          } as GPUBindGroupEntry);
+        });
+
+        const bindGroup = device.createBindGroup({
+          layout: cached.renderPipeline.bindGroupLayout,
+          entries: bindGroupEntries,
+        });
+
+        const renderPass = commandEncoder.beginRenderPass({
+          colorAttachments: [
+            {
+              view: outputTexture.createView(),
+              clearValue: { r: 0, g: 0, b: 0, a: 1 },
+              loadOp: "clear",
+              storeOp: "store",
+            },
+          ],
+        });
+
+        renderPass.setPipeline(cached.renderPipeline.pipeline);
+        renderPass.setBindGroup(0, bindGroup);
+        renderPass.draw(3);
+        renderPass.end();
+      }
 
       device.queue.submit([commandEncoder.finish()]);
 
