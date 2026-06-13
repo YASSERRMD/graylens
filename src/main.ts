@@ -5,6 +5,7 @@ import { createPassChain, type PassChain } from "./chain";
 import { canvasToPng, downloadBlob } from "./export";
 import { getFilter } from "./filters/registry";
 import { createFilterInstance, type FilterInstance } from "./filters/types";
+import { createWebcamSource, type WebcamSource } from "./webcam";
 import "./style.css";
 
 const app = document.getElementById("app");
@@ -20,6 +21,19 @@ async function main() {
   }
 
   const { device } = gpuContext;
+
+  const sourceToggle = document.createElement("div");
+  sourceToggle.className = "source-toggle";
+  app.appendChild(sourceToggle);
+
+  const imageButton = document.createElement("button");
+  imageButton.textContent = "Image";
+  imageButton.className = "active";
+  sourceToggle.appendChild(imageButton);
+
+  const webcamButton = document.createElement("button");
+  webcamButton.textContent = "Webcam";
+  sourceToggle.appendChild(webcamButton);
 
   const dropZone = document.createElement("div");
   dropZone.className = "drop-zone";
@@ -85,14 +99,65 @@ async function main() {
   downloadButton.disabled = true;
   controlBar.appendChild(downloadButton);
 
+  const statusMessage = document.createElement("div");
+  statusMessage.className = "status-message";
+  statusMessage.style.display = "none";
+  app.appendChild(statusMessage);
+
   const grayscaleFilter = getFilter("grayscale")!;
   let activeFilterInstance: FilterInstance | null = null;
   let currentTexture: GPUTexture | null = null;
   let passChain: PassChain | null = null;
+  let webcam: WebcamSource | null = null;
+  let webcamLoopId: number | null = null;
+  let isWebcamMode = false;
 
   function render() {
     if (!currentTexture || !passChain) return;
     passChain.execute(device, currentTexture, context, format);
+  }
+
+  function startWebcamLoop(): void {
+    if (!webcam || !webcam.isActive()) return;
+
+    function loop(): void {
+      if (!webcam || !webcam.isActive()) return;
+
+      const frame = webcam.getFrame();
+      if (frame) {
+        if (currentTexture) {
+          currentTexture.destroy();
+        }
+
+        currentTexture = device.createTexture({
+          size: [frame.width, frame.height],
+          format,
+          usage:
+            GPUTextureUsage.TEXTURE_BINDING |
+            GPUTextureUsage.COPY_DST |
+            GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+
+        device.queue.copyExternalImageToTexture(
+          { source: frame },
+          { texture: currentTexture },
+          [frame.width, frame.height]
+        );
+
+        render();
+      }
+
+      webcamLoopId = requestAnimationFrame(loop);
+    }
+
+    webcamLoopId = requestAnimationFrame(loop);
+  }
+
+  function stopWebcamLoop(): void {
+    if (webcamLoopId !== null) {
+      cancelAnimationFrame(webcamLoopId);
+      webcamLoopId = null;
+    }
   }
 
   async function handleFile(file: File) {
@@ -127,6 +192,61 @@ async function main() {
       passChain = createPassChain([]);
     }
   }
+
+  function showStatus(message: string): void {
+    statusMessage.textContent = message;
+    statusMessage.style.display = "block";
+  }
+
+  function hideStatus(): void {
+    statusMessage.style.display = "none";
+  }
+
+  async function switchToWebcam(): Promise<void> {
+    stopWebcamLoop();
+    if (webcam) {
+      webcam.stop();
+      webcam = null;
+    }
+
+    webcam = createWebcamSource();
+    try {
+      await webcam.start();
+      isWebcamMode = true;
+      dropZone.style.display = "none";
+      downloadButton.disabled = true;
+      hideStatus();
+      startWebcamLoop();
+    } catch (error) {
+      showStatus("Failed to access webcam. Please grant permission.");
+      webcam = null;
+    }
+  }
+
+  function switchToImage(): void {
+    stopWebcamLoop();
+    if (webcam) {
+      webcam.stop();
+      webcam = null;
+    }
+    isWebcamMode = false;
+    dropZone.style.display = "block";
+    hideStatus();
+  }
+
+  imageButton.addEventListener("click", () => {
+    if (!isWebcamMode) return;
+    imageButton.classList.add("active");
+    webcamButton.classList.remove("active");
+    switchToImage();
+  });
+
+  webcamButton.addEventListener("click", () => {
+    if (isWebcamMode) return;
+    webcamButton.classList.add("active");
+    imageButton.classList.remove("active");
+    switchToWebcam();
+  });
 
   toggleButton.addEventListener("click", () => {
     if (activeFilterInstance) {
