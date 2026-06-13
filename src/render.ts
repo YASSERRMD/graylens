@@ -32,6 +32,15 @@ export function createRenderPipeline(
         visibility: GPUShaderStage.FRAGMENT,
         texture: {},
       },
+      ...(shaderType === "grayscale"
+        ? [
+            {
+              binding: 2,
+              visibility: GPUShaderStage.FRAGMENT,
+              buffer: { type: "uniform" as const },
+            },
+          ]
+        : []),
     ],
   });
 
