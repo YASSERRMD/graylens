@@ -14,6 +14,7 @@ export interface Filter {
   kind: FilterKind;
   wgslSource: string;
   uniformParams: UniformParam[];
+  needsResolution?: boolean;
 }
 
 export interface FilterInstance {
