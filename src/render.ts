@@ -1,5 +1,4 @@
-import passthroughShader from "./shaders/passthrough.wgsl?raw";
-import grayscaleShader from "./shaders/grayscale.wgsl?raw";
+import type { Filter } from "./filters/types";
 
 export interface RenderPipeline {
   pipeline: GPURenderPipeline;
@@ -7,41 +6,38 @@ export interface RenderPipeline {
   bindGroupLayout: GPUBindGroupLayout;
 }
 
-export type ShaderType = "passthrough" | "grayscale";
-
-export function createRenderPipeline(
+export function createRenderPipelineFromFilter(
   device: GPUDevice,
   format: GPUTextureFormat,
-  shaderType: ShaderType = "passthrough"
+  filter: Filter
 ): RenderPipeline {
-  const shaderCode = shaderType === "grayscale" ? grayscaleShader : passthroughShader;
-
   const shaderModule = device.createShaderModule({
-    code: shaderCode,
+    code: filter.wgslSource,
+  });
+
+  const bindGroupLayoutEntries: GPUBindGroupLayoutEntry[] = [
+    {
+      binding: 0,
+      visibility: GPUShaderStage.FRAGMENT,
+      sampler: { type: "filtering" },
+    },
+    {
+      binding: 1,
+      visibility: GPUShaderStage.FRAGMENT,
+      texture: {},
+    },
+  ];
+
+  filter.uniformParams.forEach((_param, index) => {
+    bindGroupLayoutEntries.push({
+      binding: 2 + index,
+      visibility: GPUShaderStage.FRAGMENT,
+      buffer: { type: "uniform" },
+    });
   });
 
   const bindGroupLayout = device.createBindGroupLayout({
-    entries: [
-      {
-        binding: 0,
-        visibility: GPUShaderStage.FRAGMENT,
-        sampler: { type: "filtering" },
-      },
-      {
-        binding: 1,
-        visibility: GPUShaderStage.FRAGMENT,
-        texture: {},
-      },
-      ...(shaderType === "grayscale"
-        ? [
-            {
-              binding: 2,
-              visibility: GPUShaderStage.FRAGMENT,
-              buffer: { type: "uniform" as const },
-            },
-          ]
-        : []),
-    ],
+    entries: bindGroupLayoutEntries,
   });
 
   const pipeline = device.createRenderPipeline({
@@ -66,3 +62,5 @@ export function createRenderPipeline(
 
   return { pipeline, sampler, bindGroupLayout };
 }
+
+export type ShaderType = "passthrough" | "grayscale";

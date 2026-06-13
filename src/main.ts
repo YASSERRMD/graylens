@@ -1,9 +1,15 @@
 import { initGPU } from "./gpu/device";
 import { loadImage } from "./image";
 import { setupCanvas } from "./canvas";
-import { createRenderPipeline, type ShaderType } from "./render";
-import { createIntensityUniform, updateIntensity } from "./intensity";
+import { createRenderPipelineFromFilter } from "./render";
+import {
+  createUniformBindings,
+  updateUniformBinding,
+  type UniformBinding,
+} from "./uniforms";
 import { canvasToPng, downloadBlob } from "./export";
+import { getFilter } from "./filters/registry";
+import { createFilterInstance, type FilterInstance } from "./filters/types";
 import "./style.css";
 
 const app = document.getElementById("app");
@@ -84,23 +90,27 @@ async function main() {
   downloadButton.disabled = true;
   controlBar.appendChild(downloadButton);
 
-  let currentShaderType: ShaderType = "passthrough";
+  const grayscaleFilter = getFilter("grayscale")!;
+  let activeFilterInstance: FilterInstance | null = null;
   let currentTexture: GPUTexture | null = null;
-  let renderPipeline = createRenderPipeline(device, format, currentShaderType);
-  let intensityUniform = createIntensityUniform(device, renderPipeline.bindGroupLayout);
+  let renderPipeline = createRenderPipelineFromFilter(device, format, grayscaleFilter);
+  let uniformBindings: UniformBinding[] = [];
 
   function render() {
     if (!currentTexture) return;
 
+    const bindGroupEntries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: renderPipeline.sampler },
+      { binding: 1, resource: currentTexture.createView() },
+    ];
+
+    uniformBindings.forEach((binding, index) => {
+      bindGroupEntries.push({ binding: 2 + index, resource: { buffer: binding.buffer } });
+    });
+
     const bindGroup = device.createBindGroup({
       layout: renderPipeline.bindGroupLayout,
-      entries: [
-        { binding: 0, resource: renderPipeline.sampler },
-        { binding: 1, resource: currentTexture.createView() },
-        ...(currentShaderType === "grayscale"
-          ? [{ binding: 2, resource: { buffer: intensityUniform.buffer } }]
-          : []),
-      ],
+      entries: bindGroupEntries,
     });
 
     const commandEncoder = device.createCommandEncoder();
@@ -147,13 +157,17 @@ async function main() {
   }
 
   toggleButton.addEventListener("click", () => {
-    currentShaderType = currentShaderType === "passthrough" ? "grayscale" : "passthrough";
-    renderPipeline = createRenderPipeline(device, format, currentShaderType);
-    if (currentShaderType === "grayscale") {
-      intensityUniform = createIntensityUniform(
+    if (activeFilterInstance) {
+      activeFilterInstance = null;
+      uniformBindings = [];
+    } else {
+      activeFilterInstance = createFilterInstance(grayscaleFilter, {
+        amount: parseFloat(intensitySlider.value),
+      });
+      uniformBindings = createUniformBindings(
         device,
-        renderPipeline.bindGroupLayout,
-        parseFloat(intensitySlider.value)
+        activeFilterInstance,
+        renderPipeline.bindGroupLayout
       );
     }
     render();
@@ -161,13 +175,11 @@ async function main() {
 
   intensitySlider.addEventListener("input", (event) => {
     const amount = parseFloat((event.target as HTMLInputElement).value);
-    if (currentShaderType === "grayscale") {
-      intensityUniform = updateIntensity(
-        device,
-        intensityUniform,
-        amount,
-        renderPipeline.bindGroupLayout
-      );
+    if (activeFilterInstance && activeFilterInstance.filter.id === "grayscale") {
+      activeFilterInstance.uniformValues.amount = amount;
+      if (uniformBindings.length > 0) {
+        updateUniformBinding(device, uniformBindings[0], amount);
+      }
       render();
     }
   });
