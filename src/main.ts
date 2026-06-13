@@ -1,7 +1,7 @@
 import { initGPU } from "./gpu/device";
 import { loadImage } from "./image";
 import { setupCanvas } from "./canvas";
-import { createRenderPipeline } from "./render";
+import { createRenderPipeline, type ShaderType } from "./render";
 
 const app = document.getElementById("app");
 
@@ -31,33 +31,22 @@ async function main() {
   const { canvas, context, format } = canvasSetup;
   app.appendChild(canvas);
 
-  const renderPipeline = createRenderPipeline(device, format);
+  const toggleButton = document.createElement("button");
+  toggleButton.textContent = "Toggle Grayscale";
+  app.appendChild(toggleButton);
 
-  fileInput.addEventListener("change", async (event) => {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    if (!file) return;
+  let currentShaderType: ShaderType = "passthrough";
+  let currentTexture: GPUTexture | null = null;
+  let renderPipeline = createRenderPipeline(device, format, currentShaderType);
 
-    const imageBitmap = await loadImage(file);
-    if (!imageBitmap) return;
-
-    const texture = device.createTexture({
-      size: [imageBitmap.width, imageBitmap.height],
-      format,
-      usage:
-        GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-
-    device.queue.copyExternalImageToTexture(
-      { source: imageBitmap },
-      { texture },
-      [imageBitmap.width, imageBitmap.height]
-    );
+  function render() {
+    if (!currentTexture) return;
 
     const bindGroup = device.createBindGroup({
       layout: renderPipeline.bindGroupLayout,
       entries: [
         { binding: 0, resource: renderPipeline.sampler },
-        { binding: 1, resource: texture.createView() },
+        { binding: 1, resource: currentTexture.createView() },
       ],
     });
 
@@ -81,6 +70,35 @@ async function main() {
     renderPass.end();
 
     device.queue.submit([commandEncoder.finish()]);
+  }
+
+  toggleButton.addEventListener("click", () => {
+    currentShaderType = currentShaderType === "passthrough" ? "grayscale" : "passthrough";
+    renderPipeline = createRenderPipeline(device, format, currentShaderType);
+    render();
+  });
+
+  fileInput.addEventListener("change", async (event) => {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+
+    const imageBitmap = await loadImage(file);
+    if (!imageBitmap) return;
+
+    currentTexture = device.createTexture({
+      size: [imageBitmap.width, imageBitmap.height],
+      format,
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    device.queue.copyExternalImageToTexture(
+      { source: imageBitmap },
+      { texture: currentTexture },
+      [imageBitmap.width, imageBitmap.height]
+    );
+
+    render();
   });
 }
 
