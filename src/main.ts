@@ -1,12 +1,7 @@
 import { initGPU } from "./gpu/device";
 import { loadImage } from "./image";
 import { setupCanvas } from "./canvas";
-import { createRenderPipelineFromFilter } from "./render";
-import {
-  createUniformBindings,
-  updateUniformBinding,
-  type UniformBinding,
-} from "./uniforms";
+import { createPassChain, type PassChain } from "./chain";
 import { canvasToPng, downloadBlob } from "./export";
 import { getFilter } from "./filters/registry";
 import { createFilterInstance, type FilterInstance } from "./filters/types";
@@ -93,46 +88,11 @@ async function main() {
   const grayscaleFilter = getFilter("grayscale")!;
   let activeFilterInstance: FilterInstance | null = null;
   let currentTexture: GPUTexture | null = null;
-  let renderPipeline = createRenderPipelineFromFilter(device, format, grayscaleFilter);
-  let uniformBindings: UniformBinding[] = [];
+  let passChain: PassChain | null = null;
 
   function render() {
-    if (!currentTexture) return;
-
-    const bindGroupEntries: GPUBindGroupEntry[] = [
-      { binding: 0, resource: renderPipeline.sampler },
-      { binding: 1, resource: currentTexture.createView() },
-    ];
-
-    uniformBindings.forEach((binding, index) => {
-      bindGroupEntries.push({ binding: 2 + index, resource: { buffer: binding.buffer } });
-    });
-
-    const bindGroup = device.createBindGroup({
-      layout: renderPipeline.bindGroupLayout,
-      entries: bindGroupEntries,
-    });
-
-    const commandEncoder = device.createCommandEncoder();
-    const textureView = context.getCurrentTexture().createView();
-
-    const renderPass = commandEncoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: textureView,
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          loadOp: "clear",
-          storeOp: "store",
-        },
-      ],
-    });
-
-    renderPass.setPipeline(renderPipeline.pipeline);
-    renderPass.setBindGroup(0, bindGroup);
-    renderPass.draw(3);
-    renderPass.end();
-
-    device.queue.submit([commandEncoder.finish()]);
+    if (!currentTexture || !passChain) return;
+    passChain.execute(device, currentTexture, context, format);
   }
 
   async function handleFile(file: File) {
@@ -156,20 +116,27 @@ async function main() {
     render();
   }
 
+  function updateChain() {
+    if (passChain) {
+      passChain.destroy();
+    }
+
+    if (activeFilterInstance) {
+      passChain = createPassChain([activeFilterInstance]);
+    } else {
+      passChain = createPassChain([]);
+    }
+  }
+
   toggleButton.addEventListener("click", () => {
     if (activeFilterInstance) {
       activeFilterInstance = null;
-      uniformBindings = [];
     } else {
       activeFilterInstance = createFilterInstance(grayscaleFilter, {
         amount: parseFloat(intensitySlider.value),
       });
-      uniformBindings = createUniformBindings(
-        device,
-        activeFilterInstance,
-        renderPipeline.bindGroupLayout
-      );
     }
+    updateChain();
     render();
   });
 
@@ -177,9 +144,7 @@ async function main() {
     const amount = parseFloat((event.target as HTMLInputElement).value);
     if (activeFilterInstance && activeFilterInstance.filter.id === "grayscale") {
       activeFilterInstance.uniformValues.amount = amount;
-      if (uniformBindings.length > 0) {
-        updateUniformBinding(device, uniformBindings[0], amount);
-      }
+      updateChain();
       render();
     }
   });
@@ -196,6 +161,8 @@ async function main() {
       downloadBlob(blob, "graylens-export.png");
     }
   });
+
+  updateChain();
 }
 
 main();
