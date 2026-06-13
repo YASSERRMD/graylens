@@ -19,10 +19,42 @@ async function main() {
 
   const { device } = gpuContext;
 
+  const dropZone = document.createElement("div");
+  dropZone.textContent = "Drop an image here or click to select";
+  dropZone.style.border = "2px dashed #ccc";
+  dropZone.style.padding = "20px";
+  dropZone.style.textAlign = "center";
+  dropZone.style.cursor = "pointer";
+  app.appendChild(dropZone);
+
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = "image/png,image/jpeg";
-  app.appendChild(fileInput);
+  fileInput.style.display = "none";
+  dropZone.appendChild(fileInput);
+
+  dropZone.addEventListener("click", () => {
+    fileInput.click();
+  });
+
+  dropZone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropZone.style.borderColor = "#999";
+  });
+
+  dropZone.addEventListener("dragleave", () => {
+    dropZone.style.borderColor = "#ccc";
+  });
+
+  dropZone.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    dropZone.style.borderColor = "#ccc";
+
+    const file = event.dataTransfer?.files[0];
+    if (!file) return;
+
+    await handleFile(file);
+  });
 
   const canvasSetup = setupCanvas(device);
   if (!canvasSetup) {
@@ -33,9 +65,15 @@ async function main() {
   const { canvas, context, format } = canvasSetup;
   app.appendChild(canvas);
 
+  const controlBar = document.createElement("div");
+  controlBar.style.display = "flex";
+  controlBar.style.gap = "10px";
+  controlBar.style.marginTop = "10px";
+  app.appendChild(controlBar);
+
   const toggleButton = document.createElement("button");
   toggleButton.textContent = "Toggle Grayscale";
-  app.appendChild(toggleButton);
+  controlBar.appendChild(toggleButton);
 
   const intensitySlider = document.createElement("input");
   intensitySlider.type = "range";
@@ -43,12 +81,12 @@ async function main() {
   intensitySlider.max = "1";
   intensitySlider.step = "0.01";
   intensitySlider.value = "1";
-  app.appendChild(intensitySlider);
+  controlBar.appendChild(intensitySlider);
 
   const downloadButton = document.createElement("button");
   downloadButton.textContent = "Download PNG";
   downloadButton.disabled = true;
-  app.appendChild(downloadButton);
+  controlBar.appendChild(downloadButton);
 
   let currentShaderType: ShaderType = "passthrough";
   let currentTexture: GPUTexture | null = null;
@@ -91,6 +129,27 @@ async function main() {
     device.queue.submit([commandEncoder.finish()]);
   }
 
+  async function handleFile(file: File) {
+    const imageBitmap = await loadImage(file);
+    if (!imageBitmap) return;
+
+    currentTexture = device.createTexture({
+      size: [imageBitmap.width, imageBitmap.height],
+      format,
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    device.queue.copyExternalImageToTexture(
+      { source: imageBitmap },
+      { texture: currentTexture },
+      [imageBitmap.width, imageBitmap.height]
+    );
+
+    downloadButton.disabled = false;
+    render();
+  }
+
   toggleButton.addEventListener("click", () => {
     currentShaderType = currentShaderType === "passthrough" ? "grayscale" : "passthrough";
     renderPipeline = createRenderPipeline(device, format, currentShaderType);
@@ -120,25 +179,7 @@ async function main() {
   fileInput.addEventListener("change", async (event) => {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file) return;
-
-    const imageBitmap = await loadImage(file);
-    if (!imageBitmap) return;
-
-    currentTexture = device.createTexture({
-      size: [imageBitmap.width, imageBitmap.height],
-      format,
-      usage:
-        GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-
-    device.queue.copyExternalImageToTexture(
-      { source: imageBitmap },
-      { texture: currentTexture },
-      [imageBitmap.width, imageBitmap.height]
-    );
-
-    downloadButton.disabled = false;
-    render();
+    await handleFile(file);
   });
 
   downloadButton.addEventListener("click", () => {
