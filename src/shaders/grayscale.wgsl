@@ -1,5 +1,6 @@
 @group(0) @binding(0) var mySampler: sampler;
 @group(0) @binding(1) var myTexture: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> amount: f32;
 
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
@@ -24,5 +25,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let color = textureSample(myTexture, mySampler, input.texCoord);
   let luma = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
-  return vec4<f32>(luma, luma, luma, color.a);
+  let gray = vec3<f32>(luma, luma, luma);
+  let result = mix(color.rgb, gray, amount);
+  return vec4<f32>(result, color.a);
 }
