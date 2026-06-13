@@ -2,6 +2,7 @@ import { initGPU } from "./gpu/device";
 import { loadImage } from "./image";
 import { setupCanvas } from "./canvas";
 import { createRenderPipeline, type ShaderType } from "./render";
+import { createIntensityUniform, updateIntensity } from "./intensity";
 
 const app = document.getElementById("app");
 
@@ -35,9 +36,18 @@ async function main() {
   toggleButton.textContent = "Toggle Grayscale";
   app.appendChild(toggleButton);
 
+  const intensitySlider = document.createElement("input");
+  intensitySlider.type = "range";
+  intensitySlider.min = "0";
+  intensitySlider.max = "1";
+  intensitySlider.step = "0.01";
+  intensitySlider.value = "1";
+  app.appendChild(intensitySlider);
+
   let currentShaderType: ShaderType = "passthrough";
   let currentTexture: GPUTexture | null = null;
   let renderPipeline = createRenderPipeline(device, format, currentShaderType);
+  let intensityUniform = createIntensityUniform(device, renderPipeline.bindGroupLayout);
 
   function render() {
     if (!currentTexture) return;
@@ -47,6 +57,9 @@ async function main() {
       entries: [
         { binding: 0, resource: renderPipeline.sampler },
         { binding: 1, resource: currentTexture.createView() },
+        ...(currentShaderType === "grayscale"
+          ? [{ binding: 2, resource: { buffer: intensityUniform.buffer } }]
+          : []),
       ],
     });
 
@@ -75,7 +88,27 @@ async function main() {
   toggleButton.addEventListener("click", () => {
     currentShaderType = currentShaderType === "passthrough" ? "grayscale" : "passthrough";
     renderPipeline = createRenderPipeline(device, format, currentShaderType);
+    if (currentShaderType === "grayscale") {
+      intensityUniform = createIntensityUniform(
+        device,
+        renderPipeline.bindGroupLayout,
+        parseFloat(intensitySlider.value)
+      );
+    }
     render();
+  });
+
+  intensitySlider.addEventListener("input", (event) => {
+    const amount = parseFloat((event.target as HTMLInputElement).value);
+    if (currentShaderType === "grayscale") {
+      intensityUniform = updateIntensity(
+        device,
+        intensityUniform,
+        amount,
+        renderPipeline.bindGroupLayout
+      );
+      render();
+    }
   });
 
   fileInput.addEventListener("change", async (event) => {
