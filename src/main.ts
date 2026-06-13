@@ -22,7 +22,7 @@ async function main() {
   fileInput.accept = "image/png,image/jpeg";
   app.appendChild(fileInput);
 
-  const canvasSetup = setupCanvas();
+  const canvasSetup = setupCanvas(device);
   if (!canvasSetup) {
     app.textContent = "Failed to create canvas";
     return;

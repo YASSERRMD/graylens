@@ -4,9 +4,9 @@ export interface GPUCanvas {
   format: GPUTextureFormat;
 }
 
-export function setupCanvas(): GPUCanvas | null {
+export function setupCanvas(device: GPUDevice): GPUCanvas | null {
   const canvas = document.createElement("canvas");
-  const context = canvas.getContext("webgpu");
+  const context = canvas.getContext("webgpu") as GPUCanvasContext | null;
 
   if (!context) {
     console.error("Failed to get WebGPU context");
@@ -15,7 +15,7 @@ export function setupCanvas(): GPUCanvas | null {
 
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({
-    device: undefined,
+    device,
     format,
     alphaMode: "premultiplied",
   });
